@@ -7,8 +7,8 @@ import log_process
 import time
 import sys
 
-this_root = 'D:/project06/'
-
+this_root = 'd:\\ly\\project06\\'
+# this_root = 'D:/project06/'
 
 def mk_dir( dir, force=False):
     if not os.path.isdir(dir):
@@ -85,8 +85,8 @@ class DO_func:
         Func().mapping(current_dir,tif,outjpeg,title,mxd_file)
 
 
-    def clip1(self,folder):
-        outdir = this_root+'data\\GPP\\'
+    def clip1(self,folder,outdir):
+        # outdir = this_root+'data\\GPP\\'
 
         for f in os.listdir(folder):
             if f.endswith('hdf'):
@@ -111,8 +111,8 @@ class DO_func:
 def main():
 
     args = sys.argv
-    _, folder = args
-    DO_func().clip1(folder)
+    _, folder, outdir = args
+    DO_func().clip1(folder,outdir)
     pass
 if __name__ == '__main__':
     main()

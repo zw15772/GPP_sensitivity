@@ -12,7 +12,8 @@ from multiprocessing.pool import ThreadPool as TPool
 import os
 from analysis import *
 
-this_root = 'd:\\project06\\'
+this_root = 'd:\\ly\\project06\\'
+# this_root = 'D:/project06/'
 
 
 class CLIP():
@@ -23,9 +24,9 @@ class CLIP():
 
 
     def kernel_clip_GLASS(self,pamams):
-        years_dir, i, arcpy, script = pamams
+        years_dir, i, arcpy, script, outdir = pamams
         folder = years_dir + i + '\\'
-        cmd = [arcpy, script, folder]
+        cmd = [arcpy, script, folder, outdir]
         cmd = ' '.join(cmd)
         os.system(cmd)
 
@@ -33,14 +34,14 @@ class CLIP():
 
     def clip_GLASS(self):
         arcpy = r'C:\Python27_for_arcgis\ArcGIS10.2\python.exe'
-        script = r'C:\Users\ly\PycharmProjects\GPP_sensitivity\ly\arcpy_func.py'
+        script = r'D:\ly\GPP_sensitivity\ly\arcpy_func.py'
 
-        years_dir = this_root + 'origin_data\\GPP\\'
-        outdir = this_root + 'data\\GPP\\'
+        years_dir = this_root + 'origin_data\\LAI\\'
+        outdir = this_root + 'data\\LAI\\'
         Tools().mk_dir(outdir, force=True)
         pamams = []
         for i in os.listdir(years_dir):
-            pamams.append([years_dir, i, arcpy, script])
+            pamams.append([years_dir, i, arcpy, script, outdir])
         MUTIPROCESS(self.kernel_clip_GLASS,pamams).run()
 def main():
     CLIP().clip_GLASS()
