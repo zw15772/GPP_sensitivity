@@ -7,8 +7,8 @@ import log_process
 import time
 import sys
 
-this_root = 'd:\\ly\\project06\\'
-# this_root = 'D:/project06/'
+# this_root = 'd:\\ly\\project06\\'
+this_root = 'D:/project06/'
 
 def mk_dir( dir, force=False):
     if not os.path.isdir(dir):
@@ -109,11 +109,12 @@ class DO_func:
 
 
 def main():
-
+    #
     args = sys.argv
     _, folder, outdir = args
     DO_func().clip1(folder,outdir)
     pass
+
 if __name__ == '__main__':
     main()
 
