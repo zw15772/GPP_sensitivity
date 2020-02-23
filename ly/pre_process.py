@@ -46,6 +46,15 @@ class CLIP():
 
 
 
+    def clip_PDSI(self):
+        arcpy = r'C:\Python27_for_arcgis\ArcGIS10.2\python.exe'
+        script = r'D:\ly\GPP_sensitivity\ly\arcpy_func.py'
+
+
+
+        pass
+
+
 
 class Pre_Process:
 
@@ -53,15 +62,20 @@ class Pre_Process:
         pass
 
     def run(self):
-        fdir = this_root+'GLASS\\data\\monthly\\LAI\\'
-        per_pix = this_root+'data\\LAI\\per_pix\\'
-        # anomaly = this_root+'GPP\\per_pix_anomaly\\'
+        # fdir = this_root+'GLASS\\data\\monthly\\LAI\\'
+        # fdir = this_root+'PDSI\\clip_tif\\'
+        # per_pix = this_root+'data\\LAI\\per_pix\\'
+        # per_pix = this_root+'PDSI\\per_pix\\'
+        # anomaly = this_root+'data\\GPP\\per_pix_anomaly\\'
+        anomaly = this_root+'PDSI\\per_pix\\'
+        # anomaly_smooth = this_root+'data\\GPP\\per_pix_anomaly_smooth\\'
+        anomaly_smooth = this_root+'PDSI\\per_pix_smooth\\'
         # # Tools().mk_dir(outdir)
         # self.data_transform(fdir,per_pix)
         # self.cal_anomaly(per_pix,anomaly)
-
         # self.check_ndvi_anomaly()
-        self.check_per_pix(per_pix)
+        self.check_per_pix(anomaly_smooth)
+        # self.smooth_anomaly(anomaly,anomaly_smooth)
 
         pass
 
@@ -189,7 +203,7 @@ class Pre_Process:
             ####### one pix #######
             vals = pix_dic[pix]
             # ÇåÏ´Êý¾Ý
-            vals = Tools().interp_1d_1(vals,-3000)
+            vals = Tools().interp_1d_1(vals,0)
 
             if len(vals) == 1:
                 anomaly_pix_dic[pix] = []
@@ -262,19 +276,24 @@ class Pre_Process:
         MUTIPROCESS(self.kernel_cal_anomaly, params).run(process=6, process_or_thread='p',
                                                          text='calculating anomaly...')
 
+    def kernel_smooth_anomaly(self,params):
+        fdir,f,outdir = params
+        dic = dict(np.load(fdir + f).item())
+        smooth_dic = {}
+        for key in dic:
+            vals = dic[key]
+            smooth_vals = SMOOTH().forward_window_smooth(vals)
+            smooth_dic[key] = smooth_vals
+        np.save(outdir + f, smooth_dic)
 
-    def smooth_anomaly(self):
-        fdir = this_root+'NDVI\\per_pix_anomaly\\'
-        outdir = this_root+'NDVI\\per_pix_anomaly_smooth\\'
+    def smooth_anomaly(self,fdir,outdir):
+        # fdir = this_root+'data\\GPP\\per_pix_anomaly\\'
+        # outdir = this_root+'data\\GPP\\per_pix_anomaly_smooth\\'
         Tools().mk_dir(outdir)
+        params = []
         for f in tqdm(os.listdir(fdir)):
-            dic = dict(np.load(fdir+f).item())
-            smooth_dic = {}
-            for key in dic:
-                vals = dic[key]
-                smooth_vals = SMOOTH().forward_window_smooth(vals)
-                smooth_dic[key] = smooth_vals
-            np.save(outdir+f,smooth_dic)
+            params.append([fdir,f,outdir])
+        MUTIPROCESS(self.kernel_smooth_anomaly,params).run()
 
 
 
@@ -305,6 +324,8 @@ class Pre_Process:
             dic = dict(np.load(fdir+f).item())
             for pix in dic:
                 val = dic[pix]
+                if len(val) == 0:
+                    continue
                 if val[0]<0:
                     continue
                 print pix,val
