@@ -4,17 +4,7 @@ author: LiYang
 Date: 20200222
 Location: zzq BeiJing
 '''
-from scipy import interpolate
-from scipy import signal
-import matplotlib as mpl
-import multiprocessing
-from multiprocessing.pool import ThreadPool as TPool
-import os
 from analysis import *
-
-# this_root = 'd:\\ly\\project06\\'
-this_root = 'D:/project06/'
-
 
 class CLIP():
 
@@ -248,7 +238,7 @@ class Pre_Process:
                 std_ = climatology_std[mon]
                 mean_ = climatology_means[mon]
                 if std_ == 0:
-                    anomaly = 0 ##### ÐÞ¸Ägpp
+                    anomaly = 0 ##### ÐÞ¸Ä gpp
                 else:
                     anomaly = (vals[i] - mean_) / std_
 
