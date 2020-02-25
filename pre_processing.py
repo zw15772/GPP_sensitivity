@@ -1,3 +1,7 @@
 #coding=gbk
 print(123)
-print(434)
+
+print(456)
+print(456)
+print(456)
+print(456)
