@@ -1188,12 +1188,14 @@ class Sensitivity:
         pass
 
     def run(self):
-        # self.check_sensitivity()
-        # self.sensitivity()
-        # self.sensitivity_annual()
         # self.get_non_drought_GPP_mean()
+        self.sensitivity()
+        # self.sensitivity_annual()
+        # self.check_sensitivity()
+        # self.sensitivity_annual_different_level()
         # self.png_sensitivity_annual()
-        self.png_sensitivity_5_year()
+        # self.png_sensitivity_5_year()
+        # self.png_sensitivity_5_year_different_level()
         pass
 
 
@@ -1430,6 +1432,106 @@ class Sensitivity:
         np.save(outf,ratio_dic)
 
 
+
+    def kernel_sensitivity_annual_different_level(self,level_i):
+        outf = this_root + 'arr\\sensitivity_annual_{}'.format(level_i)
+        growing_season_f = this_root + 'NDVI\\composite_growing_season_one_month_in_advance.npy'
+        growing_season_dic = dict(np.load(growing_season_f).item())
+
+        ##### plot composite_growing_season_one_month_in_advance #####
+        # growing_season_dic_count = {}
+        # for key in growing_season_dic:
+        #     val = len(growing_season_dic[key])
+        #     growing_season_dic_count[key] = val
+        #
+        # DIC_and_TIF().plot_back_ground_arr()
+        # arr = DIC_and_TIF().pix_dic_to_spatial_arr(growing_season_dic_count)
+        # plt.imshow(arr)
+        #
+        # plt.colorbar()
+        # plt.show()
+        ##### plot composite_growing_season_one_month_in_advance #####
+
+        non_drought_gpp_mean_f = this_root + 'arr\\gpp_non_drought_mean.npy'
+        non_drought_gpp_mean_arr = np.load(non_drought_gpp_mean_f)
+        non_drought_gpp_mean_arr[non_drought_gpp_mean_arr < -9999] = np.nan
+        non_drought_gpp_mean_dic = DIC_and_TIF().spatial_arr_to_dic(non_drought_gpp_mean_arr)
+        event_dir = this_root + 'PDSI\\events\\'
+        veg_dir = this_root + 'data\\GPP\\per_pix_smooth\\'
+        # veg_dir = this_root+'data\\GPP\\per_pix_anomaly_smooth\\'
+        ratio_dic = {}
+        for f in tqdm(os.listdir(event_dir)):
+            # if not '050' in f:
+            #     continue
+            event_dic = dict(np.load(event_dir + f).item())
+            veg_dic = dict(np.load(veg_dir + f).item())
+            # pdsi_dic = dict(np.load(pdsi_dir+f).item())
+            pix_year_event_dic = {}
+            '''
+            生长季的干旱事件
+            pix_year_event_dic format:
+            key = 0705.0724 
+            val = {1984: [23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33], 
+                   1986: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52], 
+                   1987: [63, 64, 65, 66, 67, 68]}
+            '''
+
+            for pix in event_dic:
+                events = event_dic[pix]
+                if len(events) == 0:
+                    continue
+                if not pix in self.NDVI_mask_pix:
+                    continue
+                year_event_dic = {}
+                # growing_season = growing_season_dic[pix]
+                for event in events:
+                    min_index = event['min_index']
+                    level = event['level']
+                    if not level != level_i:
+                        continue
+                    current_year = Tools().index_to_year(min_index)
+                    year_event_dic[current_year] = event['date_range']
+                # for i in year_event_dic:
+                #     print pix,i,year_event_dic[i]
+                pix_year_event_dic[pix] = year_event_dic
+
+            for pix in pix_year_event_dic:
+                year_dic = pix_year_event_dic[pix]
+                growing_season = growing_season_dic[pix]
+                veg_val = veg_dic[pix]
+                non_drought_gpp_mean = non_drought_gpp_mean_dic[pix]
+                if np.isnan(non_drought_gpp_mean):
+                    continue
+                # print pix,year_dic
+                for year in year_dic:
+                    drought_range = year_dic[year]
+                    selected_veg_val = []
+                    for dr in drought_range:
+                        mon = Tools().index_to_mon(dr)
+                        if mon in growing_season:
+                            # print year,dr,mon,growing_season
+                            selected_veg_val.append(veg_val[dr])
+                    selected_veg_val_mean = np.mean(selected_veg_val)
+                    ratio = selected_veg_val_mean / non_drought_gpp_mean
+                    # print pix,year,ratio
+                    key = pix + '_' + str(year)
+                    ratio_dic[key] = ratio
+
+        # print '\nsaving...'
+        np.save(outf, ratio_dic)
+
+
+
+    def sensitivity_annual_different_level(self):
+
+        params = []
+        for level in range(1,5):
+            params.append(level)
+
+        MUTIPROCESS(self.kernel_sensitivity_annual_different_level,params).run()
+        pass
+
+
     def png_sensitivity_annual(self):
         f = this_root+'arr\\sensitivity_annual.npy'
         out_png_dir = this_root+'png\\sensitivity_annual\\'
@@ -1491,6 +1593,55 @@ class Sensitivity:
             # plt.show()
             plt.savefig(out_png_dir + str(yl[0]) + '-' + str(yl[-1]) + '_ratio.png', ppi=600)
             plt.close()
+
+
+    def kernel_png_sensitivity_5_year_different_level(self,level):
+
+        f = this_root + 'arr\\sensitivity_annual_{}.npy'.format(level)
+        out_png_dir = this_root + 'png\\sensitivity_5_year_{}\\'.format(level)
+        Tools().mk_dir(out_png_dir, force=True)
+        annual_ratio_dic = dict(np.load(f).item())
+        void_spatio_dic = DIC_and_TIF().void_spatial_dic()
+        years = range(1982, 2018)
+        years_list = []
+        for i in range(len(years) / 5):
+            temp = years[i * 5:(i + 1) * 5]
+            years_list.append(temp)
+        years_list[-1].append(2017)
+
+        for yl in years_list:
+            plt.figure(figsize=(14, 8))
+            DIC_and_TIF().plot_back_ground_arr()
+            arrs = []
+            for year in yl:
+                spatio_dic = {}
+                for pix in void_spatio_dic:
+                    key = pix + '_' + str(year)
+                    if key in annual_ratio_dic:
+                        val = annual_ratio_dic[key]
+                        spatio_dic[pix] = val
+                arr = DIC_and_TIF().pix_dic_to_spatial_arr(spatio_dic)
+                arr[arr > 2] = np.nan
+                arrs.append(arr)
+            mean_arr = Tools().cal_arrs_mean(arrs)
+            plt.imshow(mean_arr, 'jet', vmin=0.8, vmax=1.2)
+            plt.colorbar()
+            plt.title(str(yl[0]) + '-' + str(yl[-1]) + ' ratio level {}'.format(level))
+            # plt.show()
+            plt.savefig(out_png_dir + str(yl[0]) + '-' + str(yl[-1]) + '_ratio.png', ppi=600)
+            plt.close()
+
+
+    def png_sensitivity_5_year_different_level(self):
+        params = []
+        for level in range(1,5):
+            params.append(level)
+
+        MUTIPROCESS(self.kernel_png_sensitivity_5_year_different_level,params).run()
+
+
+
+        pass
 
 def main():
     # Winter().run()
