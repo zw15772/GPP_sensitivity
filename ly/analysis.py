@@ -100,6 +100,29 @@ class Tools:
         return year
 
 
+    def pick_vals_from_1darray(self, arr, index):
+        # 1d
+        picked_vals = []
+        for i in index:
+            picked_vals.append(arr[i])
+        return picked_vals
+
+
+
+    def detrend_dic(self, dic):
+        dic_new = {}
+        for key in dic:
+            vals = dic[key]
+            if len(vals) == 0:
+                dic_new[key] = []
+                continue
+            vals_new = signal.detrend(vals)
+            dic_new[key] = vals_new
+
+        return dic_new
+
+
+
     def growing_season_index_one_month_in_advance(self,growing_index):
         # 将生长季提前一个月
         growseason = np.array(growing_index) - 1
@@ -136,9 +159,25 @@ class Tools:
         mean_arr = DIC_and_TIF().pix_dic_to_spatial_arr(mean_dic)
         return mean_arr
 
-
-
-        pass
+    def linefit(self, x, y):
+        '''
+        最小二乘法拟合直线
+        :param x:
+        :param y:
+        :return:
+        '''
+        N = float(len(x))
+        sx, sy, sxx, syy, sxy = 0, 0, 0, 0, 0
+        for i in range(0, int(N)):
+            sx += x[i]
+            sy += y[i]
+            sxx += x[i] * x[i]
+            syy += y[i] * y[i]
+            sxy += x[i] * y[i]
+        a = (sy * sx / N - sxy) / (sx * sx / N - sxx)
+        b = (sy - a * sx) / N
+        r = abs(sy * sx / N - sxy) / math.sqrt((sxx - sx * sx / N) * (syy - sy * sy / N))
+        return a, b, r
 
 class DIC_and_TIF:
     '''
@@ -956,9 +995,9 @@ class PICK_events:
         pass
 
     def run(self):
-        # self.pick()
+        self.pick()
         # self.check_events()
-        self.check_events_is_in_growing_season()
+        # self.check_events_is_in_growing_season()
         pass
 
     def kernel_find_drought_period(self, params):
@@ -1050,16 +1089,20 @@ class PICK_events:
 
     def pick(self):
         spei_dir = this_root + 'PDSI\\per_pix_smooth\\'
+        veg_dir = this_root+'data\\GPP\\per_pix_anomaly_smooth\\'
         out_dir = this_root + 'PDSI\\events\\'
         Tools().mk_dir(out_dir, force=True)
         for f in tqdm(os.listdir(spei_dir), 'file...'):
-            # if not '005' in f:
-            #     continue
+            if not '055' in f:
+                continue
             spei_dic = dict(np.load(spei_dir + f).item())
+            veg_dic = dict(np.load(veg_dir + f).item())
+            detrend_veg_dic = Tools().detrend_dic(veg_dic)
             single_event_dic = {}
             for pix in spei_dic:
                 spei = spei_dic[pix]
-
+                veg = veg_dic[pix]
+                detrend_veg = detrend_veg_dic[pix]
                 if spei[0] < -999:
                     single_event_dic[pix] = []
                     continue
@@ -1075,12 +1118,27 @@ class PICK_events:
                     level, date_range, min_index = events_dic[i]
                     events.append({'level':level, 'date_range':date_range, 'min_index':min_index})
 
-                # for eventi in events:
-                #     print eventi
-                # plt.plot(spei)
-                # plt.grid()
-                # plt.show()
-                # exit()
+                ################ plot ################
+                cdic = {
+                    1:'blue',
+                    2:'green',
+                    3:'red',
+                    4:'black',
+                        }
+                plt.figure(figsize=(24,6))
+                for eventi in events:
+                    dr = eventi['date_range']
+                    leveli = eventi['level']
+                    picked_vals = Tools().pick_vals_from_1darray(spei,dr)
+                    plt.plot(dr,picked_vals,zorder='99',c=cdic[leveli],linewidth=3)
+                plt.plot(spei,'--',c='black',alpha=0.5)
+                plt.twinx()
+                plt.plot(veg,'--',c='cyan')
+                plt.plot(detrend_veg,c='cyan')
+                plt.grid()
+                plt.show()
+                plt.close()
+                ################ plot ################
 
                 # # # # # # # # # # # # # # # # # # # # # # #
                 # 不筛选单次事件（前后n个月无干旱事件）
@@ -1643,11 +1701,106 @@ class Sensitivity:
 
         pass
 
+
+
+class Trend:
+
+    def __init__(self):
+        pass
+
+    def run(self):
+        # self.trend_analysis()
+        self.check_trend_analysis()
+        pass
+
+
+    def trend_analysis(self):
+        # 生长季的trend
+        out_trend_dic = this_root+'arr\\LAI_trend_annual'
+        growing_season_f = this_root + 'NDVI\\composite_growing_season_one_month_in_advance.npy'
+        growing_season_dic = dict(np.load(growing_season_f).item())
+
+        # fdir = this_root+'data\\LAI\\per_pix_anomaly_smooth\\'
+        fdir = this_root+'data\\LAI\\per_pix_smooth\\'
+        trend_dic = {}
+        for f in tqdm(os.listdir(fdir)):
+            # if not '055' in f:
+            #     continue
+            dic = dict(np.load(fdir+f).item())
+            for pix in dic:
+
+                vals = dic[pix]
+                # if len(vals) == 0:
+                if vals[0] < -9999:
+                    continue
+                if not pix in growing_season_dic:
+                    continue
+                growing_season = growing_season_dic[pix]
+                growing_season_vals = []
+                for i in range(len(vals)):
+                    this_month = Tools().index_to_mon(i)
+                    if this_month in growing_season:
+                        gs_val = vals[i]
+                    # else:
+                    #     gs_val = np.nan
+                        growing_season_vals.append(gs_val)
+                # every_year_vals = []
+                selected_month = []
+                for i in range(len(growing_season_vals)):
+                    selected = growing_season_vals[i*5:(i+1)*5]
+                    if len(selected) == 0:
+                        continue
+                    selected_month.append(np.mean(selected))
+                # for i in selected_month:
+                #     print i
+                a, b, r = Tools().linefit(range(len(selected_month)),selected_month)
+                trend_dic[pix] = {'a':a,'b':b,'r':r}
+                # plt.plot(growing_season_vals,zorder=99)
+                # plt.plot(vals)
+                # plt.grid()
+                # plt.show()
+        np.save(out_trend_dic,trend_dic)
+
+    def check_trend_analysis(self):
+        f = this_root+'arr\\LAI_trend_annual.npy'
+        NDVI_mask_pix = dict(np.load(this_root + 'NDVI\\NDVI_mask_pix.npy').item())
+        trend_dic = dict(np.load(f).item())
+        a_dic = {}
+        for pix in trend_dic:
+            if not pix in NDVI_mask_pix:
+                continue
+            a = trend_dic[pix]['a']
+            a_dic[pix] = a
+        cmap = sns.diverging_palette(55, 155, s=99, l=50, n=10, center="light")
+        cmap = mpl.colors.ListedColormap(cmap)
+        arr = DIC_and_TIF().pix_dic_to_spatial_arr(a_dic)
+
+        hist = []
+        for i in arr:
+            for j in i:
+                if np.isnan(j):
+                    continue
+                hist.append(j)
+
+        # plt.hist(hist,bins=50)
+        #
+        # plt.figure()
+        DIC_and_TIF().plot_back_ground_arr()
+        plt.imshow(arr,cmap,vmin=-4.5,vmax=4.5)
+        plt.colorbar()
+        plt.show()
+        pass
+
+
+
+
+
 def main():
     # Winter().run()
     # PICK_events().run()
-    Sensitivity().run()
+    # Sensitivity().run()
     # NDVI().run()
+    Trend().run()
 
     pass
 

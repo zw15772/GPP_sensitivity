@@ -52,21 +52,29 @@ class Pre_Process:
         pass
 
     def run(self):
+
+        ############## paths ##############
         # fdir = this_root+'GLASS\\data\\monthly\\LAI\\'
         # fdir = this_root+'PDSI\\clip_tif\\'
+        per_pix = this_root+'data\\LAI\\per_pix_anomaly\\'
         # per_pix = this_root+'data\\LAI\\per_pix\\'
         # per_pix = this_root+'PDSI\\per_pix\\'
-        anomaly = this_root+'data\\GPP\\per_pix\\'
+        # anomaly = this_root+'data\\GPP\\per_pix\\'
         # anomaly = this_root+'PDSI\\per_pix\\'
         # anomaly_smooth = this_root+'data\\GPP\\per_pix_anomaly_smooth\\'
         # anomaly_smooth = this_root+'PDSI\\per_pix_smooth\\'
-        anomaly_smooth = this_root+'data\\GPP\\per_pix_smooth\\'
+        # anomaly_smooth = this_root+'data\\GPP\\per_pix_smooth\\'
+        anomaly_smooth = this_root+'data\\LAI\\per_pix_anomaly_smooth\\'
+        ############## paths ##############
+
+        ############## funcs ##############
         # # Tools().mk_dir(outdir)
         # self.data_transform(fdir,per_pix)
         # self.cal_anomaly(per_pix,anomaly)
         # self.check_ndvi_anomaly()
         # self.check_per_pix(anomaly_smooth)
-        self.smooth_anomaly(anomaly,anomaly_smooth)
+        self.smooth_anomaly(per_pix,anomaly_smooth)
+        ############## funcs ##############
 
         pass
 
