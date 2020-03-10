@@ -1248,12 +1248,13 @@ class Sensitivity:
     def run(self):
         # self.get_non_drought_GPP_mean()
         # self.sensitivity()
-        # self.sensitivity_annual()
+        self.sensitivity_annual()
         # self.check_sensitivity()
         # self.sensitivity_annual_different_level()
         # self.png_sensitivity_annual()
         # self.png_sensitivity_5_year()
-        self.png_sensitivity_10_year()
+        # self.png_sensitivity_10_year()
+        # self.png_sensitivity_12_year()
         # self.png_sensitivity_5_year_different_level()
         pass
 
@@ -1689,6 +1690,41 @@ class Sensitivity:
             plt.savefig(out_png_dir + str(yl[0]) + '-' + str(yl[-1]) + '_ratio.png', ppi=600)
             plt.close()
 
+    def png_sensitivity_12_year(self):
+        f = this_root+'arr\\sensitivity_annual.npy'
+        out_png_dir = this_root+'png\\sensitivity_12_year\\'
+        Tools().mk_dir(out_png_dir,force=True)
+        annual_ratio_dic = dict(np.load(f).item())
+        void_spatio_dic = DIC_and_TIF().void_spatial_dic()
+
+        years = range(1982, 2018)
+        years_list = []
+        for i in range((len(years) / 12) + 1):
+            temp = years[i * 12:(i + 1) * 12]
+            years_list.append(temp)
+
+        for yl in years_list:
+            plt.figure(figsize=(14, 8))
+            DIC_and_TIF().plot_back_ground_arr()
+            arrs = []
+            for year in yl:
+                spatio_dic = {}
+                for pix in void_spatio_dic:
+                    key = pix+'_'+str(year)
+                    if key in annual_ratio_dic:
+                        val = annual_ratio_dic[key]
+                        spatio_dic[pix] = val
+                arr = DIC_and_TIF().pix_dic_to_spatial_arr(spatio_dic)
+                arr[arr>2] = np.nan
+                arrs.append(arr)
+            mean_arr = Tools().cal_arrs_mean(arrs)
+            # plt.imshow(mean_arr, 'jet', vmin=0.8, vmax=1.2)
+            plt.imshow(mean_arr, 'RdBu_r', vmin=0.8, vmax=1.2)
+            plt.colorbar()
+            plt.title(str(yl[0]) + '-' + str(yl[-1])+' ratio')
+            plt.show()
+            # plt.savefig(out_png_dir + str(yl[0]) + '-' + str(yl[-1]) + '_ratio.png', ppi=600)
+            # plt.close()
 
 
     def kernel_png_sensitivity_5_year_different_level(self,level):
@@ -1880,14 +1916,27 @@ class Trend:
         # ######### every 5 years #########
 
         ######### every 10 years #########
+        # years = range(1982, 2018)
+        # years_list = []
+        # for i in range((len(years) / 10)+1):
+        #     temp = years[i * 10:(i + 1) * 10]
+        #     years_list.append(temp)
+        # for i in years_list:
+        #     self.trend_analysis_n_years(i)
+        ######### every 10 years #########
+
+        ######### every 12 years #########
         years = range(1982, 2018)
         years_list = []
-        for i in range((len(years) / 10)+1):
-            temp = years[i * 10:(i + 1) * 10]
+        for i in range((len(years) / 12) + 1):
+            temp = years[i * 12:(i + 1) * 12]
+            if len(temp) == 0:
+                continue
             years_list.append(temp)
         for i in years_list:
             self.trend_analysis_n_years(i)
-        ######### every 10 years #########
+        ######### every 12 years #########
+
 
         pass
 
@@ -1950,8 +1999,9 @@ class Trend:
         # mappable = plt.imshow(arr, cmap, vmin=-4.5, vmax=4.5)
         title = '{}_{}'.format(year_list[0],len(year_list))
         plt.figure(figsize=(14, 8))
-        plt.imshow(arr, cmap, vmin=-10.5, vmax=10.5)
-        plt.colorbar()
+        DIC_and_TIF().plot_back_ground_arr()
+        ax = plt.imshow(arr, cmap='RdBu_r', vmin=-10.5, vmax=10.5)
+        plt.colorbar(ax)
         plt.title(title)
         # plt.show()
         plt.savefig(self.png_out_dir+title+'.png',ppi=300)
@@ -1971,23 +2021,35 @@ class Trend:
         ######### every 5 years #########
 
         ######### every 10 years #########
+        # years = range(1982, 2018)
+        # years_list = []
+        # for i in range((len(years) / 10) + 1):
+        #     temp = years[i * 10:(i + 1) * 10]
+        #     years_list.append(temp)
+        # for i in years_list:
+        #     self.png_trend_analysis_n_years(i)
+        ######### every 10 years #########
+
+        ######### every 12 years #########
         years = range(1982, 2018)
         years_list = []
-        for i in range((len(years) / 10) + 1):
-            temp = years[i * 10:(i + 1) * 10]
+        for i in range((len(years) / 12) + 1):
+            temp = years[i * 12:(i + 1) * 12]
+            if len(temp) == 0:
+                continue
             years_list.append(temp)
         for i in years_list:
             self.png_trend_analysis_n_years(i)
-        ######### every 10 years #########
+        ######### every 12 years #########
 
         pass
 
 def main():
     # Winter().run()
     # PICK_events().run()
-    Sensitivity().run()
+    # Sensitivity().run()
     # NDVI().run()
-    # Trend().run()
+    Trend().run()
 
     pass
 
