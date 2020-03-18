@@ -4,17 +4,7 @@ author: LiYang
 Date: 20200222
 Location: zzq BeiJing
 '''
-from scipy import interpolate
-from scipy import signal
-import matplotlib as mpl
-import multiprocessing
-from multiprocessing.pool import ThreadPool as TPool
-import os
 from analysis import *
-
-# this_root = 'd:\\ly\\project06\\'
-this_root = 'D:/project06/'
-
 
 class CLIP():
 
@@ -62,21 +52,32 @@ class Pre_Process:
         pass
 
     def run(self):
+
+        ############## paths ##############
         # fdir = this_root+'GLASS\\data\\monthly\\LAI\\'
         # fdir = this_root+'PDSI\\clip_tif\\'
-        # per_pix = this_root+'data\\LAI\\per_pix\\'
+        # per_pix = this_root+'data\\LAI\\per_pix_anomaly\\'
+        per_pix = this_root+'data\\LAI\\per_pix_smooth\\'
         # per_pix = this_root+'PDSI\\per_pix\\'
-        anomaly = this_root+'data\\GPP\\per_pix\\'
+        # anomaly = this_root+'data\\GPP\\per_pix\\'
         # anomaly = this_root+'PDSI\\per_pix\\'
         # anomaly_smooth = this_root+'data\\GPP\\per_pix_anomaly_smooth\\'
         # anomaly_smooth = this_root+'PDSI\\per_pix_smooth\\'
-        anomaly_smooth = this_root+'data\\GPP\\per_pix_smooth\\'
+        # anomaly_smooth = this_root+'data\\GPP\\per_pix_smooth\\'
+        # anomaly_smooth = this_root+'data\\LAI\\per_pix_anomaly_smooth\\'
+        correction_out_dir = this_root+'data\\LAI\\per_pix_smooth_correction\\'
+        ############## paths ##############
+
+        ############## funcs ##############
         # # Tools().mk_dir(outdir)
         # self.data_transform(fdir,per_pix)
         # self.cal_anomaly(per_pix,anomaly)
         # self.check_ndvi_anomaly()
         # self.check_per_pix(anomaly_smooth)
-        self.smooth_anomaly(anomaly,anomaly_smooth)
+        # self.smooth_anomaly(per_pix,anomaly_smooth)
+        # 乘以修正系数 LAI: 0.01, GPP: 0.1
+        self.factor_correction(per_pix,correction_out_dir,factor=0.01)
+        ############## funcs ##############
 
         pass
 
@@ -248,7 +249,7 @@ class Pre_Process:
                 std_ = climatology_std[mon]
                 mean_ = climatology_means[mon]
                 if std_ == 0:
-                    anomaly = 0 ##### 修改gpp
+                    anomaly = 0 ##### 修改 gpp
                 else:
                     anomaly = (vals[i] - mean_) / std_
 
@@ -297,6 +298,25 @@ class Pre_Process:
         MUTIPROCESS(self.kernel_smooth_anomaly,params).run()
 
 
+    def factor_correction(self,indir,outdir,factor):
+        # 乘以修正系数
+        # LAI: 0.01
+        # GPP: 0.1
+        Tools().mk_dir(outdir)
+        for f in tqdm(os.listdir(indir)):
+            dic = dict(np.load(indir + f).item())
+            correction_dic = {}
+            for key in dic:
+                vals = dic[key]
+                if vals[0] < -99999:
+                    continue
+                vals = np.array(vals)
+                correction_vals = vals*factor
+                correction_dic[key] = correction_vals
+            np.save(outdir + f, correction_dic)
+        pass
+
+
 
     def check_ndvi_anomaly(self):
         fdir = this_root + 'NDVI\\per_pix\\'
@@ -332,27 +352,6 @@ class Pre_Process:
                 print pix,val
                 plt.plot(val)
                 plt.show()
-
-    def extend_GPP(self):
-        fidr = this_root + 'GPP\\per_pix_anomaly\\'
-        outdir = this_root + 'GPP\\per_pix_anomaly_extend\\'
-        Tools().mk_dir(outdir)
-        for f in tqdm(os.listdir(fidr)):
-            # if not '015' in f:
-            #     continue
-            dic = dict(np.load(fidr + f).item())
-            new_dic = {}
-            for key in dic:
-                val = dic[key]
-                n = len(val)
-                if n == 0:
-                    new_dic[key] = []
-                    continue
-                ni = 408 - 192
-                null_list = [np.nan] * ni
-                null_list.extend(val)
-                new_dic[key] = null_list
-            np.save(outdir + f, new_dic)
 
 
 

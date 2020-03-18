@@ -9,7 +9,6 @@ import time
 import to_raster
 import ogr, os, osr
 from tqdm import tqdm
-
 import datetime
 from scipy import stats, linalg
 import pandas as pd
@@ -101,6 +100,29 @@ class Tools:
         return year
 
 
+    def pick_vals_from_1darray(self, arr, index):
+        # 1d
+        picked_vals = []
+        for i in index:
+            picked_vals.append(arr[i])
+        return picked_vals
+
+
+
+    def detrend_dic(self, dic):
+        dic_new = {}
+        for key in dic:
+            vals = dic[key]
+            if len(vals) == 0:
+                dic_new[key] = []
+                continue
+            vals_new = signal.detrend(vals)
+            dic_new[key] = vals_new
+
+        return dic_new
+
+
+
     def growing_season_index_one_month_in_advance(self,growing_index):
         # 将生长季提前一个月
         growseason = np.array(growing_index) - 1
@@ -115,6 +137,47 @@ class Tools:
         return new_growing_season
 
         pass
+
+
+    def cal_arrs_mean(self,arrs):
+
+        mean_dic = {}
+        for i in tqdm(range(len(arrs[0]))):
+            for j in range(len(arrs[0][0])):
+                key = '%04d.%04d' % (i, j)
+                vals = []
+                for arr in range(len(arrs)):
+                    val = arrs[arr][i][j]
+                    if np.isnan(val):
+                        continue
+                    vals.append(val)
+                if len(vals) != 0:
+                    mean = np.mean(vals)
+                else:
+                    mean = np.nan
+                mean_dic[key] = mean
+        mean_arr = DIC_and_TIF().pix_dic_to_spatial_arr(mean_dic)
+        return mean_arr
+
+    def linefit(self, x, y):
+        '''
+        最小二乘法拟合直线
+        :param x:
+        :param y:
+        :return:
+        '''
+        N = float(len(x))
+        sx, sy, sxx, syy, sxy = 0, 0, 0, 0, 0
+        for i in range(0, int(N)):
+            sx += x[i]
+            sy += y[i]
+            sxx += x[i] * x[i]
+            syy += y[i] * y[i]
+            sxy += x[i] * y[i]
+        a = (sy * sx / N - sxy) / (sx * sx / N - sxx)
+        b = (sy - a * sx) / N
+        r = abs(sy * sx / N - sxy) / math.sqrt((sxx - sx * sx / N) * (syy - sy * sy / N))
+        return a, b, r
 
 class DIC_and_TIF:
     '''
@@ -382,6 +445,27 @@ class DIC_and_TIF:
         return arr
 
 
+    def plot_back_ground_arr(self):
+        tif_template = this_root + 'conf\\tif_template.tif'
+        arr, originX, originY, pixelWidth, pixelHeight = to_raster.raster2array(tif_template)
+        back_ground = []
+        for i in range(len(arr)):
+            temp = []
+            for j in range(len(arr[0])):
+                val = arr[i][j]
+                if val > 60000:
+                    temp.append(np.nan)
+                else:
+                    temp.append(1)
+            back_ground.append(temp)
+        back_ground = np.array(back_ground)
+        plt.imshow(back_ground, 'gray', vmin=0, vmax=1.4)
+
+        # return back_ground
+
+        pass
+
+
 class MUTIPROCESS:
     '''
     可对类内的函数进行多进程并行
@@ -461,8 +545,9 @@ class Winter:
         # self.count_num()
         # self.get_grow_season_index()
         # self.composite_tropical_growingseason()
-        self.check_composite_growing_season()
+        # self.check_composite_growing_season()
         # self.check_pix()
+        self.growing_season_one_month_in_advance()
         pass
 
     def cal_monthly_mean(self):
@@ -601,7 +686,17 @@ class Winter:
             pix_dic[pix] = range(1,13)
         np.save(this_root+'NDVI\\composite_growing_season',pix_dic)
 
+    def growing_season_one_month_in_advance(self):
+        # 将生长季提前一个月
 
+        growing_season_f = this_root + 'NDVI\\composite_growing_season.npy'
+        growing_season_dic = dict(np.load(growing_season_f).item())
+        new_growing_season_dic = {}
+        for pix in tqdm(growing_season_dic):
+            growing_season = growing_season_dic[pix]
+            new_growing_season = Tools().growing_season_index_one_month_in_advance(growing_season)
+            new_growing_season_dic[pix] = new_growing_season
+        np.save(this_root + 'NDVI\\composite_growing_season_one_month_in_advance.npy',new_growing_season_dic)
         pass
 
     def check_pix(self):
@@ -900,9 +995,9 @@ class PICK_events:
         pass
 
     def run(self):
-        # self.pick()
+        self.pick()
         # self.check_events()
-        self.check_events_is_in_growing_season()
+        # self.check_events_is_in_growing_season()
         pass
 
     def kernel_find_drought_period(self, params):
@@ -994,16 +1089,20 @@ class PICK_events:
 
     def pick(self):
         spei_dir = this_root + 'PDSI\\per_pix_smooth\\'
+        veg_dir = this_root+'data\\GPP\\per_pix_anomaly_smooth\\'
         out_dir = this_root + 'PDSI\\events\\'
         Tools().mk_dir(out_dir, force=True)
         for f in tqdm(os.listdir(spei_dir), 'file...'):
-            # if not '005' in f:
-            #     continue
+            if not '055' in f:
+                continue
             spei_dic = dict(np.load(spei_dir + f).item())
+            veg_dic = dict(np.load(veg_dir + f).item())
+            detrend_veg_dic = Tools().detrend_dic(veg_dic)
             single_event_dic = {}
             for pix in spei_dic:
                 spei = spei_dic[pix]
-
+                veg = veg_dic[pix]
+                detrend_veg = detrend_veg_dic[pix]
                 if spei[0] < -999:
                     single_event_dic[pix] = []
                     continue
@@ -1019,12 +1118,27 @@ class PICK_events:
                     level, date_range, min_index = events_dic[i]
                     events.append({'level':level, 'date_range':date_range, 'min_index':min_index})
 
-                # for eventi in events:
-                #     print eventi
-                # plt.plot(spei)
-                # plt.grid()
-                # plt.show()
-                # exit()
+                ################ plot ################
+                cdic = {
+                    1:'blue',
+                    2:'green',
+                    3:'red',
+                    4:'black',
+                        }
+                plt.figure(figsize=(24,6))
+                for eventi in events:
+                    dr = eventi['date_range']
+                    leveli = eventi['level']
+                    picked_vals = Tools().pick_vals_from_1darray(spei,dr)
+                    plt.plot(dr,picked_vals,zorder='99',c=cdic[leveli],linewidth=3)
+                plt.plot(spei,'--',c='black',alpha=0.5)
+                plt.twinx()
+                plt.plot(veg,'--',c='cyan')
+                plt.plot(detrend_veg,c='cyan')
+                plt.grid()
+                plt.show()
+                plt.close()
+                ################ plot ################
 
                 # # # # # # # # # # # # # # # # # # # # # # #
                 # 不筛选单次事件（前后n个月无干旱事件）
@@ -1101,9 +1215,13 @@ class PICK_events:
         arr = DIC_and_TIF().pix_dic_to_spatial_arr(count_dic)
         np.save(outf,arr)
         arr[arr==0] = np.nan
-        plt.imshow(arr)
+
+        DIC_and_TIF().plot_back_ground_arr()
+        plt.figure(figsize=(14,10))
+        plt.imshow(arr,'jet')
         plt.colorbar()
-        plt.show()
+        # plt.show()
+        plt.savefig(this_root+'png\\check_events_is_in_growing_season.png',ppi=600)
 
 
 
@@ -1121,27 +1239,35 @@ class Sensitivity:
 
     def __init__(self):
         self.NDVI_mask_pix = dict(np.load(this_root+'NDVI\\NDVI_mask_pix.npy').item())
-        self.tropical_pix = np.load(this_root+'NDVI\\tropical_pix.npy')
+        # self.tropical_pix = np.load(this_root+'NDVI\\tropical_pix.npy')
         # self.tropical_pix = np.load(this_root+'NDVI\\tropical_pix.npy')
         # plt.imshow(self.tropical_pix)
         # plt.show()
         pass
 
     def run(self):
-        # self.check_sensitivity()
+        # self.get_non_drought_GPP_mean()
         # self.sensitivity()
-        # self.sensitivity_annual()
-        self.get_non_drought_GPP_mean()
+        self.sensitivity_annual()
+        # self.check_sensitivity()
+        # self.sensitivity_annual_different_level()
+        # self.png_sensitivity_annual()
+        # self.png_sensitivity_5_year()
+        # self.png_sensitivity_10_year()
+        # self.png_sensitivity_12_year()
+        # self.png_sensitivity_5_year_different_level()
         pass
 
 
     def check_sensitivity(self):
-        f = this_root+'arr\\sensitivity.npy'
+        f = this_root+'arr\\gpp_non_drought_mean.npy'
         arr = np.load(f)
-        arr[arr>2] = np.nan
+        arr[arr<-9999] = np.nan
         cmap = sns.diverging_palette(236, 0, s=99, l=50, n=10, center="light")
         cmap = mpl.colors.ListedColormap(cmap)
-        plt.imshow(arr,cmap=cmap,vmin=0.7,vmax=1.3)
+        # plt.imshow(arr,cmap=cmap,vmin=0.7,vmax=1.3)
+        plt.imshow(arr,cmap)
+        plt.colorbar()
         plt.show()
         pass
 
@@ -1277,52 +1403,653 @@ class Sensitivity:
 
 
     def sensitivity_annual(self):
-        growing_season_f = this_root+'NDVI\\composite_growing_season.npy'
+        outf = this_root+'arr\\sensitivity_annual'
+        growing_season_f = this_root+'NDVI\\composite_growing_season_one_month_in_advance.npy'
         growing_season_dic = dict(np.load(growing_season_f).item())
+
+        ##### plot composite_growing_season_one_month_in_advance #####
+        # growing_season_dic_count = {}
+        # for key in growing_season_dic:
+        #     val = len(growing_season_dic[key])
+        #     growing_season_dic_count[key] = val
+        #
+        # DIC_and_TIF().plot_back_ground_arr()
+        # arr = DIC_and_TIF().pix_dic_to_spatial_arr(growing_season_dic_count)
+        # plt.imshow(arr)
+        #
+        # plt.colorbar()
+        # plt.show()
+        ##### plot composite_growing_season_one_month_in_advance #####
+
+
+        non_drought_gpp_mean_f = this_root+'arr\\gpp_non_drought_mean.npy'
+        non_drought_gpp_mean_arr = np.load(non_drought_gpp_mean_f)
+        non_drought_gpp_mean_arr[non_drought_gpp_mean_arr<-9999] = np.nan
+        non_drought_gpp_mean_dic = DIC_and_TIF().spatial_arr_to_dic(non_drought_gpp_mean_arr)
         event_dir = this_root + 'PDSI\\events\\'
         veg_dir = this_root + 'data\\GPP\\per_pix_smooth\\'
         # veg_dir = this_root+'data\\GPP\\per_pix_anomaly_smooth\\'
-        spatial_dic = {}
+        ratio_dic = {}
         for f in tqdm(os.listdir(event_dir)):
             # if not '050' in f:
             #     continue
             event_dic = dict(np.load(event_dir + f).item())
             veg_dic = dict(np.load(veg_dir + f).item())
             # pdsi_dic = dict(np.load(pdsi_dir+f).item())
+            pix_year_event_dic = {}
+            '''
+            生长季的干旱事件
+            pix_year_event_dic format:
+            key = 0705.0724 
+            val = {1984: [23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33], 
+                   1986: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52], 
+                   1987: [63, 64, 65, 66, 67, 68]}
+            '''
+
             for pix in event_dic:
                 events = event_dic[pix]
                 if len(events) == 0:
                     continue
                 if not pix in self.NDVI_mask_pix:
                     continue
-                veg_val = veg_dic[pix]
-                events = event_dic[pix]
-                # pdsi_val = pdsi_dic[key]
-                drought_veg_vals = []
-                non_drought_veg_vals = []
-                all_event_i = []
+                year_event_dic = {}
+                # growing_season = growing_season_dic[pix]
                 for event in events:
-                    date_range = event['date_range']
                     min_index = event['min_index']
                     # 筛选在生长季内发生的干旱事件
                     current_month = Tools().index_to_mon(min_index)
-                    growing_season = growing_season_dic[pix]
-                    if not current_month in growing_season:
-                        continue
-
+                    # if not current_month in growing_season:
+                    #     continue
                     current_year = Tools().index_to_year(min_index)
-                    print current_year
-                    for i in date_range:
-                        all_event_i.append(i)
+                    year_event_dic[current_year]=event['date_range']
+                # for i in year_event_dic:
+                #     print pix,i,year_event_dic[i]
+                pix_year_event_dic[pix] = year_event_dic
+
+
+            for pix in pix_year_event_dic:
+                year_dic = pix_year_event_dic[pix]
+                growing_season = growing_season_dic[pix]
+                veg_val = veg_dic[pix]
+                non_drought_gpp_mean = non_drought_gpp_mean_dic[pix]
+                if np.isnan(non_drought_gpp_mean):
+                    continue
+                # print pix,year_dic
+                for year in year_dic:
+                    drought_range = year_dic[year]
+                    selected_veg_val = []
+                    for dr in drought_range:
+                        mon = Tools().index_to_mon(dr)
+                        if mon in growing_season:
+                            # print year,dr,mon,growing_season
+                            selected_veg_val.append(veg_val[dr])
+                    selected_veg_val_mean = np.mean(selected_veg_val)
+                    ratio = selected_veg_val_mean/non_drought_gpp_mean
+                    # print pix,year,ratio
+                    key = pix+'_'+str(year)
+                    ratio_dic[key] = ratio
+        print '\nsaving...'
+        np.save(outf,ratio_dic)
 
 
 
+    def kernel_sensitivity_annual_different_level(self,level_i):
+        outf = this_root + 'arr\\sensitivity_annual_{}'.format(level_i)
+        growing_season_f = this_root + 'NDVI\\composite_growing_season_one_month_in_advance.npy'
+        growing_season_dic = dict(np.load(growing_season_f).item())
+
+        ##### plot composite_growing_season_one_month_in_advance #####
+        # growing_season_dic_count = {}
+        # for key in growing_season_dic:
+        #     val = len(growing_season_dic[key])
+        #     growing_season_dic_count[key] = val
+        #
+        # DIC_and_TIF().plot_back_ground_arr()
+        # arr = DIC_and_TIF().pix_dic_to_spatial_arr(growing_season_dic_count)
+        # plt.imshow(arr)
+        #
+        # plt.colorbar()
+        # plt.show()
+        ##### plot composite_growing_season_one_month_in_advance #####
+
+        non_drought_gpp_mean_f = this_root + 'arr\\gpp_non_drought_mean.npy'
+        non_drought_gpp_mean_arr = np.load(non_drought_gpp_mean_f)
+        non_drought_gpp_mean_arr[non_drought_gpp_mean_arr < -9999] = np.nan
+        non_drought_gpp_mean_dic = DIC_and_TIF().spatial_arr_to_dic(non_drought_gpp_mean_arr)
+        event_dir = this_root + 'PDSI\\events\\'
+        veg_dir = this_root + 'data\\GPP\\per_pix_smooth\\'
+        # veg_dir = this_root+'data\\GPP\\per_pix_anomaly_smooth\\'
+        ratio_dic = {}
+        for f in tqdm(os.listdir(event_dir)):
+            # if not '050' in f:
+            #     continue
+            event_dic = dict(np.load(event_dir + f).item())
+            veg_dic = dict(np.load(veg_dir + f).item())
+            # pdsi_dic = dict(np.load(pdsi_dir+f).item())
+            pix_year_event_dic = {}
+            '''
+            生长季的干旱事件
+            pix_year_event_dic format:
+            key = 0705.0724 
+            val = {1984: [23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33], 
+                   1986: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52], 
+                   1987: [63, 64, 65, 66, 67, 68]}
+            '''
+
+            for pix in event_dic:
+                events = event_dic[pix]
+                if len(events) == 0:
+                    continue
+                if not pix in self.NDVI_mask_pix:
+                    continue
+                year_event_dic = {}
+                # growing_season = growing_season_dic[pix]
+                for event in events:
+                    min_index = event['min_index']
+                    level = event['level']
+                    if not level != level_i:
+                        continue
+                    current_year = Tools().index_to_year(min_index)
+                    year_event_dic[current_year] = event['date_range']
+                # for i in year_event_dic:
+                #     print pix,i,year_event_dic[i]
+                pix_year_event_dic[pix] = year_event_dic
+
+            for pix in pix_year_event_dic:
+                year_dic = pix_year_event_dic[pix]
+                growing_season = growing_season_dic[pix]
+                veg_val = veg_dic[pix]
+                non_drought_gpp_mean = non_drought_gpp_mean_dic[pix]
+                if np.isnan(non_drought_gpp_mean):
+                    continue
+                # print pix,year_dic
+                for year in year_dic:
+                    drought_range = year_dic[year]
+                    selected_veg_val = []
+                    for dr in drought_range:
+                        mon = Tools().index_to_mon(dr)
+                        if mon in growing_season:
+                            # print year,dr,mon,growing_season
+                            selected_veg_val.append(veg_val[dr])
+                    selected_veg_val_mean = np.mean(selected_veg_val)
+                    ratio = selected_veg_val_mean / non_drought_gpp_mean
+                    # print pix,year,ratio
+                    key = pix + '_' + str(year)
+                    ratio_dic[key] = ratio
+
+        # print '\nsaving...'
+        np.save(outf, ratio_dic)
+
+
+
+    def sensitivity_annual_different_level(self):
+
+        params = []
+        for level in range(1,5):
+            params.append(level)
+
+        MUTIPROCESS(self.kernel_sensitivity_annual_different_level,params).run()
+        pass
+
+
+    def png_sensitivity_annual(self):
+        f = this_root+'arr\\sensitivity_annual.npy'
+        out_png_dir = this_root+'png\\sensitivity_annual\\'
+        Tools().mk_dir(out_png_dir,force=True)
+        annual_ratio_dic = dict(np.load(f).item())
+        void_spatio_dic = DIC_and_TIF().void_spatial_dic()
+        years = range(1982,2018)
+        for year in tqdm(years):
+            plt.figure(figsize=(14,8))
+            spatio_dic = {}
+            for pix in void_spatio_dic:
+                key = pix+'_'+str(year)
+                if key in annual_ratio_dic:
+                    val = annual_ratio_dic[key]
+                    spatio_dic[pix] = val
+            arr = DIC_and_TIF().pix_dic_to_spatial_arr(spatio_dic)
+            arr[arr>2] = np.nan
+            DIC_and_TIF().plot_back_ground_arr()
+            plt.imshow(arr,'jet',vmin=0.8,vmax=1.2)
+            plt.colorbar()
+            plt.title(str(year)+' ratio')
+            # plt.show()
+            plt.savefig(out_png_dir+str(year)+'_ratio.png',ppi=144)
+            plt.close()
+
+
+
+    def png_sensitivity_5_year(self):
+        f = this_root+'arr\\sensitivity_annual.npy'
+        out_png_dir = this_root+'png\\sensitivity_5_year\\'
+        Tools().mk_dir(out_png_dir,force=True)
+        annual_ratio_dic = dict(np.load(f).item())
+        void_spatio_dic = DIC_and_TIF().void_spatial_dic()
+        years = range(1982,2018)
+        years_list = []
+        for i in range(len(years)/5):
+            temp = years[i*5:(i+1)*5]
+            years_list.append(temp)
+        years_list[-1].append(2017)
+
+        for yl in years_list:
+            plt.figure(figsize=(14, 8))
+            DIC_and_TIF().plot_back_ground_arr()
+            arrs = []
+            for year in yl:
+                spatio_dic = {}
+                for pix in void_spatio_dic:
+                    key = pix+'_'+str(year)
+                    if key in annual_ratio_dic:
+                        val = annual_ratio_dic[key]
+                        spatio_dic[pix] = val
+                arr = DIC_and_TIF().pix_dic_to_spatial_arr(spatio_dic)
+                arr[arr>2] = np.nan
+                arrs.append(arr)
+            mean_arr = Tools().cal_arrs_mean(arrs)
+            plt.imshow(mean_arr, 'jet', vmin=0.8, vmax=1.2)
+            plt.colorbar()
+            plt.title(str(yl[0]) + '-' + str(yl[-1])+' ratio')
+            # plt.show()
+            plt.savefig(out_png_dir + str(yl[0]) + '-' + str(yl[-1]) + '_ratio.png', ppi=600)
+            plt.close()
+
+
+    def png_sensitivity_10_year(self):
+        f = this_root+'arr\\sensitivity_annual.npy'
+        out_png_dir = this_root+'png\\sensitivity_10_year\\'
+        Tools().mk_dir(out_png_dir,force=True)
+        annual_ratio_dic = dict(np.load(f).item())
+        void_spatio_dic = DIC_and_TIF().void_spatial_dic()
+
+        years = range(1982, 2018)
+        years_list = []
+        for i in range((len(years) / 10) + 1):
+            temp = years[i * 10:(i + 1) * 10]
+            years_list.append(temp)
+
+        for yl in years_list:
+            plt.figure(figsize=(14, 8))
+            DIC_and_TIF().plot_back_ground_arr()
+            arrs = []
+            for year in yl:
+                spatio_dic = {}
+                for pix in void_spatio_dic:
+                    key = pix+'_'+str(year)
+                    if key in annual_ratio_dic:
+                        val = annual_ratio_dic[key]
+                        spatio_dic[pix] = val
+                arr = DIC_and_TIF().pix_dic_to_spatial_arr(spatio_dic)
+                arr[arr>2] = np.nan
+                arrs.append(arr)
+            mean_arr = Tools().cal_arrs_mean(arrs)
+            plt.imshow(mean_arr, 'jet', vmin=0.8, vmax=1.2)
+            plt.colorbar()
+            plt.title(str(yl[0]) + '-' + str(yl[-1])+' ratio')
+            # plt.show()
+            plt.savefig(out_png_dir + str(yl[0]) + '-' + str(yl[-1]) + '_ratio.png', ppi=600)
+            plt.close()
+
+    def png_sensitivity_12_year(self):
+        f = this_root+'arr\\sensitivity_annual.npy'
+        out_png_dir = this_root+'png\\sensitivity_12_year\\'
+        Tools().mk_dir(out_png_dir,force=True)
+        annual_ratio_dic = dict(np.load(f).item())
+        void_spatio_dic = DIC_and_TIF().void_spatial_dic()
+
+        years = range(1982, 2018)
+        years_list = []
+        for i in range((len(years) / 12) + 1):
+            temp = years[i * 12:(i + 1) * 12]
+            years_list.append(temp)
+
+        for yl in years_list:
+            plt.figure(figsize=(14, 8))
+            DIC_and_TIF().plot_back_ground_arr()
+            arrs = []
+            for year in yl:
+                spatio_dic = {}
+                for pix in void_spatio_dic:
+                    key = pix+'_'+str(year)
+                    if key in annual_ratio_dic:
+                        val = annual_ratio_dic[key]
+                        spatio_dic[pix] = val
+                arr = DIC_and_TIF().pix_dic_to_spatial_arr(spatio_dic)
+                arr[arr>2] = np.nan
+                arrs.append(arr)
+            mean_arr = Tools().cal_arrs_mean(arrs)
+            # plt.imshow(mean_arr, 'jet', vmin=0.8, vmax=1.2)
+            plt.imshow(mean_arr, 'RdBu_r', vmin=0.8, vmax=1.2)
+            plt.colorbar()
+            plt.title(str(yl[0]) + '-' + str(yl[-1])+' ratio')
+            plt.show()
+            # plt.savefig(out_png_dir + str(yl[0]) + '-' + str(yl[-1]) + '_ratio.png', ppi=600)
+            # plt.close()
+
+
+    def kernel_png_sensitivity_5_year_different_level(self,level):
+
+        f = this_root + 'arr\\sensitivity_annual_{}.npy'.format(level)
+        out_png_dir = this_root + 'png\\sensitivity_5_year_{}\\'.format(level)
+        Tools().mk_dir(out_png_dir, force=True)
+        annual_ratio_dic = dict(np.load(f).item())
+        void_spatio_dic = DIC_and_TIF().void_spatial_dic()
+        years = range(1982, 2018)
+        years_list = []
+        for i in range(len(years) / 5):
+            temp = years[i * 5:(i + 1) * 5]
+            years_list.append(temp)
+        years_list[-1].append(2017)
+
+        for yl in years_list:
+            plt.figure(figsize=(14, 8))
+            DIC_and_TIF().plot_back_ground_arr()
+            arrs = []
+            for year in yl:
+                spatio_dic = {}
+                for pix in void_spatio_dic:
+                    key = pix + '_' + str(year)
+                    if key in annual_ratio_dic:
+                        val = annual_ratio_dic[key]
+                        spatio_dic[pix] = val
+                arr = DIC_and_TIF().pix_dic_to_spatial_arr(spatio_dic)
+                arr[arr > 2] = np.nan
+                arrs.append(arr)
+            mean_arr = Tools().cal_arrs_mean(arrs)
+            plt.imshow(mean_arr, 'jet', vmin=0.8, vmax=1.2)
+            plt.colorbar()
+            plt.title(str(yl[0]) + '-' + str(yl[-1]) + ' ratio level {}'.format(level))
+            # plt.show()
+            plt.savefig(out_png_dir + str(yl[0]) + '-' + str(yl[-1]) + '_ratio.png', ppi=600)
+            plt.close()
+
+
+    def png_sensitivity_5_year_different_level(self):
+        params = []
+        for level in range(1,5):
+            params.append(level)
+
+        MUTIPROCESS(self.kernel_png_sensitivity_5_year_different_level,params).run()
+
+
+
+        pass
+
+
+
+class Trend:
+
+    def __init__(self):
+        self.arr_out_dir = this_root+'arr\\Trend\\'
+        self.png_out_dir = this_root+'png\\Trend\\'
+        Tools().mk_dir(self.arr_out_dir)
+        Tools().mk_dir(self.png_out_dir)
+        pass
+
+    def run(self):
+        # self.trend_analysis()
+        # self.png_trend_analysis()
+        # self.do_trend_analysis_n_years()
+        self.do_png_trend_analysis_n_years()
+        pass
+
+
+    def trend_analysis(self):
+        # 生长季的trend
+        out_trend_dic = self.arr_out_dir + 'LAI_trend_annual'
+        growing_season_f = this_root + 'NDVI\\composite_growing_season_one_month_in_advance.npy'
+        growing_season_dic = dict(np.load(growing_season_f).item())
+
+        # fdir = this_root+'data\\LAI\\per_pix_anomaly_smooth\\'
+        fdir = this_root+'data\\LAI\\per_pix_smooth\\'
+        trend_dic = {}
+        for f in tqdm(os.listdir(fdir)):
+            # if not '055' in f:
+            #     continue
+            dic = dict(np.load(fdir+f).item())
+            for pix in dic:
+
+                vals = dic[pix]
+                # if len(vals) == 0:
+                if vals[0] < -9999:
+                    continue
+                if not pix in growing_season_dic:
+                    continue
+                growing_season = growing_season_dic[pix]
+                growing_season_vals = []
+                for i in range(len(vals)):
+                    this_month = Tools().index_to_mon(i)
+                    if this_month in growing_season:
+                        gs_val = vals[i]
+                    # else:
+                    #     gs_val = np.nan
+                        growing_season_vals.append(gs_val)
+                # every_year_vals = []
+                selected_month = []
+                for i in range(len(growing_season_vals)):
+                    selected = growing_season_vals[i*5:(i+1)*5]
+                    if len(selected) == 0:
+                        continue
+                    selected_month.append(np.mean(selected))
+                # for i in selected_month:
+                #     print i
+                a, b, r = Tools().linefit(range(len(selected_month)),selected_month)
+                trend_dic[pix] = {'a':a,'b':b,'r':r}
+                # plt.plot(growing_season_vals,zorder=99)
+                # plt.plot(vals)
+                # plt.grid()
+                # plt.show()
+        np.save(out_trend_dic,trend_dic)
+
+
+    def trend_analysis_n_years(self,year_list):
+        # 生长季的trend
+        out_trend_dic = self.arr_out_dir + 'LAI_trend_annual_{}_every_{}_years'.format(year_list[0],len(year_list))
+        growing_season_f = this_root + 'NDVI\\composite_growing_season_one_month_in_advance.npy'
+        growing_season_dic = dict(np.load(growing_season_f).item())
+
+        # fdir = this_root+'data\\LAI\\per_pix_anomaly_smooth\\'
+        fdir = this_root + 'data\\LAI\\per_pix_smooth\\'
+        trend_dic = {}
+        for f in tqdm(os.listdir(fdir)):
+            # if not '055' in f:
+            #     continue
+            dic = dict(np.load(fdir + f).item())
+            for pix in dic:
+
+                vals = dic[pix]
+                # if len(vals) == 0:
+                if vals[0] < -9999:
+                    continue
+                if not pix in growing_season_dic:
+                    continue
+                growing_season = growing_season_dic[pix]
+                growing_season_vals = []
+                for i in range(len(vals)):
+                    this_month = Tools().index_to_mon(i)
+                    this_year = Tools().index_to_year(i)
+                    if not this_year in year_list:
+                        continue
+                    if this_month in growing_season:
+                        gs_val = vals[i]
+                        # else:
+                        #     gs_val = np.nan
+                        growing_season_vals.append(gs_val)
+                # every_year_vals = []
+                selected_month = []
+                for i in range(len(growing_season_vals)):
+                    selected = growing_season_vals[i * 5:(i + 1) * 5]
+                    if len(selected) == 0:
+                        continue
+                    selected_month.append(np.mean(selected))
+                # for i in selected_month:
+                #     print i
+                try:
+                    a, b, r = Tools().linefit(range(len(selected_month)), selected_month)
+                except:
+                    a, b, r = np.nan,np.nan,np.nan,
+                trend_dic[pix] = {'a': a, 'b': b, 'r': r}
+
+                ############## plot ##############
+                # plt.plot(growing_season_vals,zorder=99)
+                # plt.plot(vals)
+                # plt.grid()
+                # plt.show()
+                ############## plot ##############
+
+        np.save(out_trend_dic, trend_dic)
+
+
+        pass
+
+
+    def do_trend_analysis_n_years(self):
+        ######### every 5 years #########
+        # years = range(1982, 2018)
+        # years_list = []
+        # for i in range(len(years) / 5):
+        #     temp = years[i * 5:(i + 1) * 5]
+        #     years_list.append(temp)
+        # years_list[-1].append(2017)
+        # for i in years_list:
+        #     self.trend_analysis_n_years(i)
+        # ######### every 5 years #########
+
+        ######### every 10 years #########
+        # years = range(1982, 2018)
+        # years_list = []
+        # for i in range((len(years) / 10)+1):
+        #     temp = years[i * 10:(i + 1) * 10]
+        #     years_list.append(temp)
+        # for i in years_list:
+        #     self.trend_analysis_n_years(i)
+        ######### every 10 years #########
+
+        ######### every 12 years #########
+        years = range(1982, 2018)
+        years_list = []
+        for i in range((len(years) / 12) + 1):
+            temp = years[i * 12:(i + 1) * 12]
+            if len(temp) == 0:
+                continue
+            years_list.append(temp)
+        for i in years_list:
+            self.trend_analysis_n_years(i)
+        ######### every 12 years #########
+
+
+        pass
+
+
+    def png_trend_analysis(self):
+        f = self.arr_out_dir+'LAI_trend_annual.npy'
+        NDVI_mask_pix = dict(np.load(this_root + 'NDVI\\NDVI_mask_pix.npy').item())
+        trend_dic = dict(np.load(f).item())
+        a_dic = {}
+        for pix in trend_dic:
+            if not pix in NDVI_mask_pix:
+                continue
+            a = trend_dic[pix]['a']
+            a_dic[pix] = a
+        cmap = sns.diverging_palette(55, 155, s=99, l=50, n=10, center="light")
+        cmap = mpl.colors.ListedColormap(cmap)
+        arr = DIC_and_TIF().pix_dic_to_spatial_arr(a_dic)
+
+        hist = []
+        for i in arr:
+            for j in i:
+                if np.isnan(j):
+                    continue
+                hist.append(j)
+
+        # plt.hist(hist,bins=50)
+        #
+        # plt.figure()
+        DIC_and_TIF().plot_back_ground_arr()
+        plt.imshow(arr,cmap,vmin=-4.5,vmax=4.5)
+        plt.colorbar()
+        plt.show()
+        pass
+
+
+    def png_trend_analysis_n_years(self,year_list):
+        f = self.arr_out_dir + 'LAI_trend_annual_{}_every_{}_years.npy'.format(year_list[0],len(year_list))
+        NDVI_mask_pix = dict(np.load(this_root + 'NDVI\\NDVI_mask_pix.npy').item())
+        trend_dic = dict(np.load(f).item())
+        a_dic = {}
+        for pix in trend_dic:
+            if not pix in NDVI_mask_pix:
+                continue
+            a = trend_dic[pix]['a']
+            a_dic[pix] = a
+        cmap = sns.diverging_palette(55, 155, s=99, l=50, n=10, center="light")
+        cmap = mpl.colors.ListedColormap(cmap)
+        arr = DIC_and_TIF().pix_dic_to_spatial_arr(a_dic)
+
+        # hist = []
+        # for i in arr:
+        #     for j in i:
+        #         if np.isnan(j):
+        #             continue
+        #         hist.append(j)
+        # plt.hist(hist,bins=50)
+        #
+        # plt.figure()
+        # DIC_and_TIF().plot_back_ground_arr()
+        # mappable = plt.imshow(arr, cmap, vmin=-4.5, vmax=4.5)
+        title = '{}_{}'.format(year_list[0],len(year_list))
+        plt.figure(figsize=(14, 8))
+        DIC_and_TIF().plot_back_ground_arr()
+        ax = plt.imshow(arr, cmap='RdBu_r', vmin=-10.5, vmax=10.5)
+        plt.colorbar(ax)
+        plt.title(title)
+        # plt.show()
+        plt.savefig(self.png_out_dir+title+'.png',ppi=300)
+
+    def do_png_trend_analysis_n_years(self):
+        ######### every 5 years #########
+        # years = range(1982, 2018)
+        # years_list = []
+        # for i in range(len(years) / 5):
+        #     temp = years[i * 5:(i + 1) * 5]
+        #     years_list.append(temp)
+        # years_list[-1].append(2017)
+        # for i in years_list:
+        #     # print i
+        #     self.png_trend_analysis_n_years(i)
+        #     # self.png_trend_analysis_n_years(years_list)
+        ######### every 5 years #########
+
+        ######### every 10 years #########
+        # years = range(1982, 2018)
+        # years_list = []
+        # for i in range((len(years) / 10) + 1):
+        #     temp = years[i * 10:(i + 1) * 10]
+        #     years_list.append(temp)
+        # for i in years_list:
+        #     self.png_trend_analysis_n_years(i)
+        ######### every 10 years #########
+
+        ######### every 12 years #########
+        years = range(1982, 2018)
+        years_list = []
+        for i in range((len(years) / 12) + 1):
+            temp = years[i * 12:(i + 1) * 12]
+            if len(temp) == 0:
+                continue
+            years_list.append(temp)
+        for i in years_list:
+            self.png_trend_analysis_n_years(i)
+        ######### every 12 years #########
+
+        pass
 
 def main():
     # Winter().run()
     # PICK_events().run()
-    Sensitivity().run()
+    # Sensitivity().run()
     # NDVI().run()
+    Trend().run()
 
     pass
 
